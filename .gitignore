@@ -7,8 +7,10 @@
 # testing
 /coverage
 
-# next.js
-/.next/
+# next.js cache and dev files (preserve standalone build artifacts)
+/.next/*
+!/.next/standalone/
+!/.next/static/
 /out/
 
 # production

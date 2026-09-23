@@ -56,7 +56,18 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 ## Hosting on Your Server
 
-### Option 1: Standard Node.js Server (Recommended)
+### Option 1: Standalone Runner (Recommended for APM / Mobile / node server.js)
+
+The project includes an optimized standalone runner `server.js`. You can boot the server immediately without complex setup:
+```bash
+node server.js
+```
+Or with custom port:
+```bash
+PORT=3000 node server.js
+```
+
+### Option 2: Standard Node.js Server
 
 1. **Install dependencies:**
    ```bash

@@ -1,0 +1,10 @@
+{
+  "/api/auth/logout/route": "/api/auth/logout",
+  "/api/auth/login/route": "/api/auth/login",
+  "/api/external/route": "/api/external",
+  "/api/auth/me/route": "/api/auth/me",
+  "/api/data/route": "/api/data",
+  "/api/health/route": "/api/health",
+  "/_not-found/page": "/_not-found",
+  "/page": "/"
+}
