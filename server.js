@@ -39,3 +39,4 @@ if (fs.existsSync(standaloneServerPath)) {
     process.exit(1);
   });
 }
+

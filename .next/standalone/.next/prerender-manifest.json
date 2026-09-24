@@ -1,30 +1,6 @@
 {
   "version": 4,
   "routes": {
-    "/": {
-      "experimentalBypassFor": [
-        {
-          "type": "header",
-          "key": "next-action"
-        },
-        {
-          "type": "header",
-          "key": "content-type",
-          "value": "multipart/form-data;.*"
-        }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/",
-      "dataRoute": "/index.rsc",
-      "allowHeader": [
-        "host",
-        "x-matched-path",
-        "x-prerender-revalidate",
-        "x-prerender-revalidate-if-generated",
-        "x-next-revalidated-tags",
-        "x-next-revalidate-tag-token"
-      ]
-    },
     "/_not-found": {
       "initialStatus": 404,
       "experimentalBypassFor": [
@@ -49,13 +25,37 @@
         "x-next-revalidated-tags",
         "x-next-revalidate-tag-token"
       ]
+    },
+    "/": {
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "next-action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/",
+      "dataRoute": "/index.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
     }
   },
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "ad4ece51c7beb8c07220b1ec9abfe475",
-    "previewModeSigningKey": "425ebaeccab58f6808a706b81b8901572c1032b55d4412ae6f8171b2d3d7d9ba",
-    "previewModeEncryptionKey": "ea545fd87fbf5198ad2277221535c9bc4cf011fefb6d3bc3b5e859aaf363e499"
+    "previewModeId": "afa7deabc6c7929efbcec310ae6308a4",
+    "previewModeSigningKey": "361fd3979bfe455b08a60c8c9bb80fdbc5344510b6b4856f54de418b6be0a3a0",
+    "previewModeEncryptionKey": "056f6ac241d9a0fbb3e096f13ca558266dfa42f56add91ea36585425f127882e"
   }
 }
