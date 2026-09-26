@@ -1,9 +1,9 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 const IMAGE_CATALOG = [
   {
     id: "img-1",
-    title: " Electromagnetic Field Lines & Flux Density Diagram",
+    title: "Electromagnetic Field Lines & Flux Density Diagram",
     category: "Physics Diagram",
     resolution: "1920x1080",
     format: "SVG / Vector Stream",
@@ -67,13 +67,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get("mode") || "list";
 
-  // Mode 1: Stream binary high-density SVG artwork directly from the mobile server
   if (mode === "render") {
     const id = searchParams.get("id") || "img-1";
     const bust = searchParams.get("t") || String(Date.now());
     const item = IMAGE_CATALOG.find((x) => x.id === id) || IMAGE_CATALOG[0];
 
-    // Generate complex high-detail SVG paths (~25KB of vector data) to test real image streaming
     const waves: string[] = [];
     for (let i = 0; i < 65; i++) {
       const yOffset = 80 + i * 12;
@@ -128,10 +126,12 @@ export async function GET(request: Request) {
     });
   }
 
-  // Mode 2: Return Image Gallery Metadata List
   const items = IMAGE_CATALOG.map((img, idx) => ({
     ...img,
+    streamUrl: `/api/media/images?mode=render&id=${img.id}`,
     serverStreamUrl: `/api/media/images?mode=render&id=${img.id}`,
+    hdUrl: img.externalThumb,
+    estimatedSizeKB: 23 + idx,
     approxServerBytes: 22500 + idx * 1200,
     downloads: 420 + idx * 95,
   }));

@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 const SECRET_KEY =
   process.env.SESSION_SECRET || "default-fallback-session-key-at-least-32-chars-long";
@@ -11,9 +11,6 @@ export interface SessionPayload {
   issuedAt: number;
 }
 
-/**
- * Creates and signs a JWT session token valid for 2 hours.
- */
 export async function signSessionToken(
   payload: Omit<SessionPayload, "issuedAt">
 ): Promise<string> {
@@ -24,9 +21,6 @@ export async function signSessionToken(
     .sign(encodedKey);
 }
 
-/**
- * Verifies a JWT session token and returns the payload.
- */
 export async function verifySessionToken(
   token: string
 ): Promise<SessionPayload | null> {
@@ -40,13 +34,37 @@ export async function verifySessionToken(
   }
 }
 
-/**
- * Helper to retrieve the current session from incoming request cookies.
- */
-export async function getSession(): Promise<SessionPayload | null> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("auth_session")?.value;
-  if (!token) return null;
-  return verifySessionToken(token);
-}
+export async function getSession(request?: Request): Promise<SessionPayload | null> {
+  if (request) {
+    const authHeader = request.headers.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.slice(7).trim();
+      const verified = await verifySessionToken(token);
+      if (verified) return verified;
+    }
+  }
 
+  try {
+    const headerStore = await headers();
+    const authHeader = headerStore.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.slice(7).trim();
+      const verified = await verifySessionToken(token);
+      if (verified) return verified;
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("auth_session")?.value;
+    if (token) {
+      return verifySessionToken(token);
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}

@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import crypto from "crypto";
 
 const VIDEO_CATALOG = [
@@ -9,10 +9,13 @@ const VIDEO_CATALOG = [
     duration: "0:15 (HD Test Stream)",
     resolution: "1280x720 (720p HD)",
     bitrate: "2.4 Mbps",
+    bitrateMbps: 2.4,
     sizeMB: 1.8,
     category: "Physics",
-    // Public reliable MP4 stream for HTML5 video player
+    description: "Full derivations of parallel and perpendicular axis theorems with rolling motion energy conservation.",
+    mp4Url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
     streamUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+    binaryChunkUrl: "/api/media/videos?mode=stream&id=vid-1",
     serverChunkUrl: "/api/media/videos?mode=stream&id=vid-1",
     thumbnail: "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=800&q=80",
   },
@@ -23,9 +26,13 @@ const VIDEO_CATALOG = [
     duration: "0:15 (HD Test Stream)",
     resolution: "1280x720 (720p HD)",
     bitrate: "2.8 Mbps",
+    bitrateMbps: 2.8,
     sizeMB: 2.1,
     category: "Mathematics",
+    description: "Visualizing curl, divergence, and phase-space trajectories for second-order differential systems.",
+    mp4Url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
     streamUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+    binaryChunkUrl: "/api/media/videos?mode=stream&id=vid-2",
     serverChunkUrl: "/api/media/videos?mode=stream&id=vid-2",
     thumbnail: "https://images.unsplash.com/photo-1509228468518-180dd4864904?auto=format&fit=crop&w=800&q=80",
   },
@@ -36,9 +43,13 @@ const VIDEO_CATALOG = [
     duration: "0:15 (HD Test Stream)",
     resolution: "1280x720 (720p HD)",
     bitrate: "3.1 Mbps",
+    bitrateMbps: 3.1,
     sizeMB: 2.4,
     category: "System Architecture",
+    description: "Benchmarking Node.js event loop latency, HTTP 206 byte-range streaming, and reverse proxy throughput.",
+    mp4Url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
     streamUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+    binaryChunkUrl: "/api/media/videos?mode=stream&id=vid-3",
     serverChunkUrl: "/api/media/videos?mode=stream&id=vid-3",
     thumbnail: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=800&q=80",
   },
@@ -48,7 +59,6 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get("mode") || "list";
 
-  // Mode 1: Server-side Binary Video Packet / Byte-Range Streamer (Simulates 256KB video segment streaming)
   if (mode === "stream") {
     const id = searchParams.get("id") || "vid-1";
     const chunkKB = Math.min(Math.max(parseInt(searchParams.get("chunkKB") || "128", 10), 16), 1024);
@@ -65,7 +75,6 @@ export async function GET(request: Request) {
     }
 
     const contentLength = Math.max(end - start + 1, 0);
-    // Generate deterministic binary video transport stream packet buffer
     const headerTag = Buffer.from(`MP4_SEGMENT_STREAM:${id}:BYTES_${start}_${end}:`);
     const randomPayload = crypto.randomBytes(Math.max(contentLength - headerTag.length, 64));
     const buffer = Buffer.concat([headerTag, randomPayload], contentLength);
@@ -84,7 +93,6 @@ export async function GET(request: Request) {
     });
   }
 
-  // Mode 2: Return Video Catalog Metadata
   return NextResponse.json({
     status: "success",
     type: "video-catalog",
