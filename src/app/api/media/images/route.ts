@@ -1,77 +1,114 @@
 import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 
 const IMAGE_CATALOG = [
   {
     id: "img-1",
-    title: "Electromagnetic Field Lines & Flux Density Diagram",
-    category: "Physics Diagram",
-    resolution: "1920x1080",
-    format: "SVG / Vector Stream",
+    file: "img-1.jpg",
+    title: "Electromagnetic Field Lines & Flux Density (Local HD JPEG)",
+    category: "Physics",
+    resolution: "1600x1067 HD",
+    format: "Local JPEG (276 KB)",
     accent: "#38bdf8",
     secondary: "#6366f1",
-    externalThumb: "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=900&q=80",
+    sizeKB: 276,
   },
   {
     id: "img-2",
-    title: "3D Fourier Transform & Harmonic Wave Interference",
+    file: "img-2.jpg",
+    title: "3D Fourier Transform & Harmonic Wave Interference (Local HD JPEG)",
     category: "Mathematics",
-    resolution: "1920x1080",
-    format: "SVG / Vector Stream",
+    resolution: "1600x1067 HD",
+    format: "Local JPEG (156 KB)",
     accent: "#10b981",
     secondary: "#059669",
-    externalThumb: "https://images.unsplash.com/photo-1509228468518-180dd4864904?auto=format&fit=crop&w=900&q=80",
+    sizeKB: 156,
   },
   {
     id: "img-3",
-    title: "Microservices Load Balancer & Reverse Proxy Topology",
+    file: "img-3.jpg",
+    title: "Data Center Server Racks & Reverse Proxy Topology (Local HD JPEG)",
     category: "System Architecture",
-    resolution: "1920x1080",
-    format: "SVG / Vector Stream",
+    resolution: "1600x1067 HD",
+    format: "Local JPEG (347 KB)",
     accent: "#f59e0b",
     secondary: "#dc2626",
-    externalThumb: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=900&q=80",
+    sizeKB: 347,
   },
   {
     id: "img-4",
-    title: "Orbital Molecular Hybridization & Crystal Lattice",
+    file: "img-4.jpg",
+    title: "Molecular Hybridization & Laboratory Spectroscopy (Local HD JPEG)",
     category: "Chemistry",
-    resolution: "1920x1080",
-    format: "SVG / Vector Stream",
+    resolution: "1600x1067 HD",
+    format: "Local JPEG (302 KB)",
     accent: "#ec4899",
     secondary: "#8b5cf6",
-    externalThumb: "https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?auto=format&fit=crop&w=900&q=80",
+    sizeKB: 302,
   },
   {
     id: "img-5",
-    title: "Neural Network Backpropagation Gradient Surface",
+    file: "img-5.jpg",
+    title: "Neural Network Backpropagation & AI Compute Cluster (1.1 MB HD JPEG)",
     category: "Computer Science",
-    resolution: "1920x1080",
-    format: "SVG / Vector Stream",
+    resolution: "1600x1067 HD",
+    format: "Local JPEG (1.09 MB)",
     accent: "#a855f7",
     secondary: "#3b82f6",
-    externalThumb: "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=900&q=80",
+    sizeKB: 1094,
   },
   {
     id: "img-6",
-    title: "Deep Space Telescope Nebula & Star Cluster Photometry",
+    file: "img-6.jpg",
+    title: "Deep Space Telescope Nebula & Star Cluster Photometry (Local HD JPEG)",
     category: "Astrophysics",
-    resolution: "1920x1080",
-    format: "SVG / Vector Stream",
+    resolution: "1600x1067 HD",
+    format: "Local JPEG (347 KB)",
     accent: "#06b6d4",
     secondary: "#1d4ed8",
-    externalThumb: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=900&q=80",
+    sizeKB: 347,
   },
 ];
+
+function resolveMediaFile(subpath: string): string | null {
+  const candidates = [
+    path.join(process.cwd(), "public", subpath),
+    path.join(process.cwd(), "..", "..", "public", subpath),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get("mode") || "list";
+  const id = searchParams.get("id") || "img-1";
+  const item = IMAGE_CATALOG.find((x) => x.id === id) || IMAGE_CATALOG[0];
 
-  if (mode === "render") {
-    const id = searchParams.get("id") || "img-1";
+  // Mode 1: Stream real local High-Res JPEG file from public/media/images/
+  if (mode === "jpg" || mode === "photo") {
+    const filePath = resolveMediaFile(path.join("media", "images", item.file));
+    if (filePath) {
+      const fileBuffer = fs.readFileSync(filePath);
+      return new NextResponse(fileBuffer, {
+        status: 200,
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Content-Length": String(fileBuffer.length),
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          "X-Server-Image-Id": item.id,
+          "X-Source": "local-disk-jpeg",
+        },
+      });
+    }
+  }
+
+  // Mode 2: Stream dynamically generated binary SVG diagram
+  if (mode === "render" || mode === "jpg" || mode === "photo") {
     const bust = searchParams.get("t") || String(Date.now());
-    const item = IMAGE_CATALOG.find((x) => x.id === id) || IMAGE_CATALOG[0];
-
     const waves: string[] = [];
     for (let i = 0; i < 65; i++) {
       const yOffset = 80 + i * 12;
@@ -107,7 +144,7 @@ export async function GET(request: Request) {
       <g>${nodes.join("\n")}</g>
       <rect x="40" y="40" width="1120" height="670" rx="20" fill="none" stroke="${item.accent}" stroke-opacity="0.35" stroke-width="2" />
       <rect x="70" y="530" width="1060" height="140" rx="14" fill="#020617" fill-opacity="0.82" stroke="${item.accent}" stroke-opacity="0.4" />
-      <text x="105" y="578" fill="#f8fafc" font-family="monospace, sans-serif" font-size="28" font-weight="bold">${item.title}</text>
+      <text x="105" y="578" fill="#f8fafc" font-family="monospace, sans-serif" font-size="24" font-weight="bold">${item.title}</text>
       <text x="105" y="618" fill="${item.accent}" font-family="monospace" font-size="18">Category: ${item.category} | Server Binary Stream ID: ${item.id} | Frame: ${bust}</text>
       <text x="105" y="648" fill="#94a3b8" font-family="monospace" font-size="15">Rendered dynamically by Mobile Node.js Server (${new Date().toISOString()})</text>
     </svg>`;
@@ -126,14 +163,14 @@ export async function GET(request: Request) {
     });
   }
 
-  const items = IMAGE_CATALOG.map((img, idx) => ({
+  const items = IMAGE_CATALOG.map((img) => ({
     ...img,
+    hdUrl: `/api/media/images?mode=jpg&id=${img.id}`,
+    externalThumb: `/api/media/images?mode=jpg&id=${img.id}`,
     streamUrl: `/api/media/images?mode=render&id=${img.id}`,
     serverStreamUrl: `/api/media/images?mode=render&id=${img.id}`,
-    hdUrl: img.externalThumb,
-    estimatedSizeKB: 23 + idx,
-    approxServerBytes: 22500 + idx * 1200,
-    downloads: 420 + idx * 95,
+    estimatedSizeKB: img.sizeKB,
+    approxServerBytes: img.sizeKB * 1024,
   }));
 
   return NextResponse.json({

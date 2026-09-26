@@ -10,7 +10,7 @@ console.log("=================================================================")
 console.log(`Target Server : ${targetUrl}`);
 console.log(`Concurrency   : ${concurrency} simultaneous virtual users`);
 console.log(`Duration      : ${durationSeconds} seconds`);
-console.log(`Workload Mix  : Text JSON | Image SVG | Video 206 | Auth API | SSR`);
+console.log(`Workload Mix  : Text JSON | Local HD JPEG | Local MP4 206 | Auth API | SSR`);
 console.log("=================================================================\n");
 
 async function authenticate() {
@@ -32,13 +32,13 @@ async function authenticate() {
 
   if (!loginRes.ok) {
     console.warn("   [WARN] Login failed, running unauthenticated load test.");
-    return "";
+    return { token: "", cookie: "" };
   }
 
   const loginData = await loginRes.json();
   const setCookie = loginRes.headers.get("set-cookie");
   const cookieHeader = setCookie ? setCookie.split(";")[0] : "";
-  console.log("   [OK] Authenticated (Testing SSR, Rich Text, Binary Images, Video Streams & Protected APIs)\n");
+  console.log("   [OK] Authenticated (Testing SSR, Rich Text, Local HD JPEGs, Local MP4 Streams & Protected APIs)\n");
   return { token: loginData.token || "", cookie: cookieHeader };
 }
 
@@ -63,14 +63,14 @@ async function runLoadTest() {
       headers: {},
     },
     {
-      name: "Binary SVG Image",
-      path: "/api/media/images?mode=render&id=img-1&complexity=60",
+      name: "Local HD Image (JPEG)",
+      path: "/api/media/images?mode=jpg&id=img-1",
       headers: {},
     },
     {
-      name: "Video Stream (128KB)",
-      path: "/api/media/videos?mode=stream&id=vid-1&chunkKB=128",
-      headers: { Range: "bytes=0-131071" },
+      name: "Local MP4 Video (256KB)",
+      path: "/api/media/videos?mode=stream&id=vid-1&chunkKB=256",
+      headers: { Range: "bytes=0-262143" },
     },
     {
       name: "Protected CRUD + Init",
@@ -179,7 +179,7 @@ async function runLoadTest() {
   console.log("Workload Breakdown:");
   for (const [name, stats] of Object.entries(perScenarioCounts)) {
     console.log(
-      `  - ${name.padEnd(22)}: ${String(stats.count).padStart(5)} reqs | ${(stats.bytes / (1024 * 1024)).toFixed(2)} MB`
+      `  - ${name.padEnd(23)}: ${String(stats.count).padStart(5)} reqs | ${(stats.bytes / (1024 * 1024)).toFixed(2)} MB`
     );
   }
   console.log("-----------------------------------------------------------------");

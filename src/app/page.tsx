@@ -114,7 +114,7 @@ export default function Home() {
   const [feedLoading, setFeedLoading] = useState(false);
 
   const [images, setImages] = useState<ImageMeta[]>([]);
-  const [imageMode, setImageMode] = useState<"server-svg" | "external-hd">("server-svg");
+  const [imageMode, setImageMode] = useState<"server-svg" | "external-hd">("external-hd");
   const [imageCacheBuster, setImageCacheBuster] = useState(1);
   const [selectedImage, setSelectedImage] = useState<ImageMeta | null>(null);
   const [binaryProbeResult, setBinaryProbeResult] = useState<{ id: string; sizeKB: number; ms: number } | null>(null);
@@ -271,15 +271,16 @@ export default function Home() {
 
   const probeImageBinary = async (imgId: string) => {
     const start = performance.now();
-    const url = `/api/media/images?mode=render&id=${imgId}&complexity=90&t=${Date.now()}`;
+    const modeParam = imageMode === "external-hd" ? "jpg" : "render";
+    const url = `/api/media/images?mode=${modeParam}&id=${imgId}&t=${Date.now()}`;
     try {
       const res = await fetch(url, { cache: "no-store" });
       const blob = await res.blob();
       const duration = Math.round(performance.now() - start);
       const sizeKB = blob.size / 1024;
       setBinaryProbeResult({ id: imgId, sizeKB: Number(sizeKB.toFixed(2)), ms: duration });
-      logApiCall("GET", `/api/media/images?mode=render&id=${imgId}`, res.status, duration, sizeKB, {
-        binaryStream: "image/svg+xml",
+      logApiCall("GET", `/api/media/images?mode=${modeParam}&id=${imgId}`, res.status, duration, sizeKB, {
+        binaryStream: blob.type || "image/jpeg",
         imageId: imgId,
         bytesDownloaded: blob.size,
         latencyMs: duration,
@@ -312,7 +313,7 @@ export default function Home() {
   const streamVideoChunk = async (vidId: string, chunkKB = 256) => {
     setChunkStreaming(true);
     const start = performance.now();
-    const byteStart = chunkStreamStats.totalKB * 1024;
+    const byteStart = (chunkStreamStats.chunksLoaded * 65536) % (256 * 1024);
     const byteEnd = byteStart + chunkKB * 1024 - 1;
     const url = `/api/media/videos?mode=stream&id=${vidId}&chunkKB=${chunkKB}`;
     try {
@@ -335,10 +336,10 @@ export default function Home() {
       }));
 
       logApiCall("GET (206)", url, res.status, duration, downloadedKB, {
-        streamType: "video/mp4 (Binary Buffer)",
+        streamType: "video/mp4 (Local Disk MP4 Byte-Range)",
         status: res.status,
         contentRange,
-        chunkSizeKB: downloadedKB,
+        chunkSizeKB: Number(downloadedKB.toFixed(2)),
         throughputMBps: speedMBps,
       });
     } catch (err) {
@@ -390,8 +391,8 @@ export default function Home() {
       { name: "1. Server Telemetry", endpoint: "/api/health", type: "JSON" },
       { name: "2. Session Auth Check", endpoint: "/api/auth/me", type: "AUTH", headers: getAuthHeaders() },
       { name: "3. Study Feed (Large Text)", endpoint: "/api/feed/text?subject=All&size=large", type: "TEXT" },
-      { name: "4. Vector Diagram (Binary SVG)", endpoint: "/api/media/images?mode=render&id=img-1&complexity=80", type: "IMAGE" },
-      { name: "5. Video Segment (256KB Stream)", endpoint: "/api/media/videos?mode=stream&id=vid-1&chunkKB=256", type: "VIDEO" },
+      { name: "4. Local HD Image (JPEG)", endpoint: "/api/media/images?mode=jpg&id=img-1", type: "IMAGE" },
+      { name: "5. Local MP4 Video (256KB)", endpoint: "/api/media/videos?mode=stream&id=vid-1&chunkKB=256", type: "VIDEO" },
       { name: "6. Dashboard Crypto Init", endpoint: "/api/scenario/dashboard-init", type: "JSON", headers: getAuthHeaders() },
     ];
 
@@ -842,16 +843,6 @@ export default function Home() {
 
                   <div className="flex flex-wrap items-center gap-2">
                     <button
-                      onClick={() => setImageMode("server-svg")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                        imageMode === "server-svg"
-                          ? "bg-emerald-600 text-white"
-                          : "bg-slate-950 text-slate-400 border border-slate-800"
-                      }`}
-                    >
-                      Server Binary Stream (24KB/img)
-                    </button>
-                    <button
                       onClick={() => setImageMode("external-hd")}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
                         imageMode === "external-hd"
@@ -859,7 +850,17 @@ export default function Home() {
                           : "bg-slate-950 text-slate-400 border border-slate-800"
                       }`}
                     >
-                      External HD Photos
+                      Local HD JPEG Stream (156KB–1.1MB)
+                    </button>
+                    <button
+                      onClick={() => setImageMode("server-svg")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                        imageMode === "server-svg"
+                          ? "bg-emerald-600 text-white"
+                          : "bg-slate-950 text-slate-400 border border-slate-800"
+                      }`}
+                    >
+                      Dynamic Server SVG (24KB)
                     </button>
                     <button
                       onClick={() => setImageCacheBuster((c) => c + 1)}
@@ -884,12 +885,15 @@ export default function Home() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {images.map((img) => {
                     const baseStream = img.streamUrl || img.serverStreamUrl || `/api/media/images?mode=render&id=${img.id}`;
-                    const baseHd = img.hdUrl || img.externalThumb || baseStream;
+                    const baseHd = img.hdUrl || img.externalThumb || `/api/media/images?mode=jpg&id=${img.id}`;
                     const src =
                       imageMode === "server-svg"
                         ? `${baseStream}&t=${imageCacheBuster}`
                         : `${baseHd}&t=${imageCacheBuster}`;
-                    const sizeKB = img.estimatedSizeKB || Math.round((img.approxServerBytes || 24000) / 1024);
+                    const sizeKB =
+                      imageMode === "server-svg"
+                        ? 24
+                        : img.estimatedSizeKB || Math.round((img.approxServerBytes || 250000) / 1024);
                     return (
                       <div
                         key={img.id}
@@ -936,11 +940,11 @@ export default function Home() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-4">
                   <div>
                     <h2 className="text-lg font-bold text-white">
-                      HD Video Player &amp; HTTP 206 Partial Content Streamer (`/api/media/videos`)
+                      Local MP4 Video Player &amp; HTTP 206 Partial Content Streamer (`/api/media/videos`)
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Test real HTML5 MP4 video playback AND stress-test your mobile server&apos;s binary video chunk
-                      streaming throughput
+                      Streams real local MP4 files (`public/media/videos/*.mp4`) from your server with HTTP 206
+                      byte-range support
                     </p>
                   </div>
 
@@ -989,11 +993,12 @@ export default function Home() {
                     <div className="md:col-span-7 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
                       <video
                         key={activeVideo.id}
+                        src={activeVideo.mp4Url || activeVideo.streamUrl || `/api/media/videos?mode=stream&id=${activeVideo.id}`}
                         controls
+                        playsInline
                         preload="metadata"
                         className="w-full aspect-video bg-black"
                       >
-                        <source src={activeVideo.mp4Url || activeVideo.streamUrl} type="video/mp4" />
                         Your browser does not support HTML5 video.
                       </video>
                       <div className="p-4 space-y-1.5">
