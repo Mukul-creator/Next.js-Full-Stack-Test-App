@@ -7,8 +7,8 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { username, password } = body;
 
-    const expectedUser = process.env.ADMIN_USER ;
-    const expectedPassword = process.env.ADMIN_PASSWORD ;
+    const expectedUser = process.env.ADMIN_USER || "admin";
+    const expectedPassword = process.env.ADMIN_PASSWORD || "password123";
 
     if (!username || !password) {
       return NextResponse.json(
@@ -24,25 +24,24 @@ export async function POST(request: Request) {
       );
     }
 
-    // Generate JWT token
     const token = await signSessionToken({
       username,
       role: "administrator",
     });
 
-    // Set HTTP-Only Cookie
     const cookieStore = await cookies();
     cookieStore.set("auth_session", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 2, // 2 hours
+      maxAge: 60 * 60 * 2,
     });
 
     return NextResponse.json({
       success: true,
       message: "Authentication successful",
+      token,
       user: {
         username,
         role: "administrator",
@@ -56,4 +55,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

@@ -1,146 +1,194 @@
-/**
- * Method 1: Built-In Full-Stack Load Tester for Mobile Server
- *
- * Usage:
- *   node scripts/load-test.mjs <SERVER_URL> [CONCURRENCY] [DURATION_SECONDS]
- *
- * Example:
- *   node scripts/load-test.mjs http://192.168.1.50:3000 20 15
- */
+#!/usr/bin/env node
 
 const targetUrl = (process.argv[2] || "http://localhost:3000").replace(/\/$/, "");
-const concurrency = parseInt(process.argv[3] || "20", 10);
-const durationSec = parseInt(process.argv[4] || "15", 10);
+const concurrency = parseInt(process.argv[3] || "30", 10);
+const durationSeconds = parseInt(process.argv[4] || "15", 10);
 
-console.log("=========================================================");
-console.log("NEXT.JS MOBILE SERVER LOAD TESTER");
-console.log("=========================================================");
+console.log("=================================================================");
+console.log("NEXT.JS REAL-WORLD MULTI-MEDIA & MULTI-API LOAD TESTER");
+console.log("=================================================================");
 console.log(`Target Server : ${targetUrl}`);
 console.log(`Concurrency   : ${concurrency} simultaneous virtual users`);
-console.log(`Duration      : ${durationSec} seconds`);
-console.log("=========================================================\n");
+console.log(`Duration      : ${durationSeconds} seconds`);
+console.log(`Workload Mix  : Text JSON | Image SVG | Video 206 | Auth API | SSR`);
+console.log("=================================================================\n");
+
+async function authenticate() {
+  console.log("1. Checking server connectivity & authenticating...");
+  const healthRes = await fetch(`${targetUrl}/api/health`);
+  if (!healthRes.ok) {
+    throw new Error(`Health check failed with status ${healthRes.status}`);
+  }
+  const health = await healthRes.json();
+  console.log(
+    `   [OK] Server ONLINE (Uptime: ${health.uptimeSeconds}s, Node: ${health.nodeVersion}, RAM: ${health.memoryUsageMB} MB)`
+  );
+
+  const loginRes = await fetch(`${targetUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "admin", password: "password123" }),
+  });
+
+  if (!loginRes.ok) {
+    console.warn("   [WARN] Login failed, running unauthenticated load test.");
+    return "";
+  }
+
+  const loginData = await loginRes.json();
+  const setCookie = loginRes.headers.get("set-cookie");
+  const cookieHeader = setCookie ? setCookie.split(";")[0] : "";
+  console.log("   [OK] Authenticated (Testing SSR, Rich Text, Binary Images, Video Streams & Protected APIs)\n");
+  return { token: loginData.token || "", cookie: cookieHeader };
+}
 
 async function runLoadTest() {
-  // Step 1: Check connectivity & authenticate to get session token
-  console.log("1. Checking server connectivity & authenticating...");
-  let token = "";
+  let auth = { token: "", cookie: "" };
   try {
-    const healthRes = await fetch(`${targetUrl}/api/health`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    const healthData = await healthRes.json();
-    console.log(`   [OK] Server is ONLINE (Uptime: ${healthData.uptime}, Node: ${healthData.nodeVersion})`);
-
-    const loginRes = await fetch(`${targetUrl}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "admin", password: "password123" }),
-    });
-    const loginData = await loginRes.json();
-    if (loginData.token) {
-      token = loginData.token;
-      console.log("   [OK] Authenticated successfully (Testing Frontend, Public API & Protected API)\n");
-    }
+    auth = await authenticate();
   } catch (err) {
-    console.error(`   [ERROR] Could not reach ${targetUrl}. Make sure the server is running!`);
-    console.error(`   Details: ${err.message}`);
+    console.error(`\n[ERROR] Could not connect to ${targetUrl}`);
+    console.error(`Details: ${err.message}\n`);
     process.exit(1);
   }
 
-  // Step 2: Run concurrent virtual users
-  console.log(`2. Firing load test (${concurrency} workers for ${durationSec}s)...`);
+  const authHeaders = {};
+  if (auth.token) authHeaders["Authorization"] = `Bearer ${auth.token}`;
+  if (auth.cookie) authHeaders["Cookie"] = auth.cookie;
 
-  const latencies = [];
-  let successCount = 0;
-  let errorCount = 0;
-  let peakHeapMB = 0;
-  const endTime = Date.now() + durationSec * 1000;
-  const startTime = Date.now();
-
-  const endpoints = [
-    { path: "/", headers: {} },
-    { path: "/api/health", headers: {} },
-    { path: "/api/data", headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  const scenarios = [
+    {
+      name: "Rich Text Feed",
+      path: "/api/feed/text?subject=Physics&size=normal",
+      headers: {},
+    },
+    {
+      name: "Binary SVG Image",
+      path: "/api/media/images?mode=render&id=img-1&complexity=60",
+      headers: {},
+    },
+    {
+      name: "Video Stream (128KB)",
+      path: "/api/media/videos?mode=stream&id=vid-1&chunkKB=128",
+      headers: { Range: "bytes=0-131071" },
+    },
+    {
+      name: "Protected CRUD + Init",
+      path: "/api/data",
+      headers: authHeaders,
+    },
+    {
+      name: "SSR Home Page",
+      path: "/",
+      headers: {},
+    },
   ];
 
+  let totalRequests = 0;
+  let successCount = 0;
+  let errorCount = 0;
+  let totalBytesDownloaded = 0;
+  const latencies = [];
+  const perScenarioCounts = {};
+  for (const s of scenarios) {
+    perScenarioCounts[s.name] = { count: 0, bytes: 0 };
+  }
+
+  const startTime = performance.now();
+  const endTime = startTime + durationSeconds * 1000;
+  let isRunning = true;
+
+  const progressTimer = setInterval(() => {
+    const elapsed = (performance.now() - startTime) / 1000;
+    const rps = (totalRequests / Math.max(0.1, elapsed)).toFixed(1);
+    const mbps = (totalBytesDownloaded / (1024 * 1024) / Math.max(0.1, elapsed)).toFixed(2);
+    process.stdout.write(
+      `\r   Elapsed: ${elapsed.toFixed(1)}s | Reqs: ${totalRequests} | Speed: ${rps} req/s | Bandwidth: ${mbps} MB/s | Errors: ${errorCount}   `
+    );
+  }, 500);
+
   async function worker(workerId) {
-    let i = workerId;
-    while (Date.now() < endTime) {
-      const target = endpoints[i % endpoints.length];
-      i++;
+    let step = workerId;
+    while (isRunning && performance.now() < endTime) {
+      const scenario = scenarios[step % scenarios.length];
+      step++;
+
       const reqStart = performance.now();
       try {
-        const res = await fetch(`${targetUrl}${target.path}`, {
-          headers: target.headers,
-          signal: AbortSignal.timeout(8000),
+        const res = await fetch(`${targetUrl}${scenario.path}`, {
+          headers: scenario.headers,
         });
-        const reqDuration = performance.now() - reqStart;
-        latencies.push(reqDuration);
+        const buf = await res.arrayBuffer();
+        const latency = performance.now() - reqStart;
 
-        if (res.ok) {
+        totalRequests++;
+        totalBytesDownloaded += buf.byteLength;
+        latencies.push(latency);
+        perScenarioCounts[scenario.name].count++;
+        perScenarioCounts[scenario.name].bytes += buf.byteLength;
+
+        if (res.ok || res.status === 206) {
           successCount++;
-          if (target.path === "/api/data") {
-            const json = await res.json();
-            const mem = json.systemMetrics?.heapUsedMB || 0;
-            if (mem > peakHeapMB) peakHeapMB = mem;
-          } else {
-            await res.text();
-          }
         } else {
           errorCount++;
         }
       } catch {
+        totalRequests++;
         errorCount++;
       }
     }
   }
 
-  const progressInterval = setInterval(() => {
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    const total = successCount + errorCount;
-    const currentRps = (total / Math.max(elapsed, 0.1)).toFixed(1);
-    process.stdout.write(
-      `\r   Elapsed: ${elapsed}s | Requests: ${total} | Speed: ${currentRps} req/sec | Errors: ${errorCount}   `
-    );
-  }, 500);
-
-  const workers = Array.from({ length: concurrency }, (_, idx) => worker(idx));
+  console.log(`2. Firing multi-media load test (${concurrency} workers for ${durationSeconds}s)...`);
+  const workers = Array.from({ length: concurrency }, (_, i) => worker(i));
   await Promise.all(workers);
-  clearInterval(progressInterval);
+  isRunning = false;
+  clearInterval(progressTimer);
 
-  const totalDurationSec = (Date.now() - startTime) / 1000;
-  const totalRequests = successCount + errorCount;
-  const rps = (totalRequests / totalDurationSec).toFixed(2);
-
+  const totalTimeSeconds = (performance.now() - startTime) / 1000;
   latencies.sort((a, b) => a - b);
-  const avgLatency =
-    latencies.length > 0
-      ? (latencies.reduce((a, b) => a + b, 0) / latencies.length).toFixed(2)
-      : 0;
-  const minLatency = latencies.length > 0 ? latencies[0].toFixed(2) : 0;
-  const maxLatency = latencies.length > 0 ? latencies[latencies.length - 1].toFixed(2) : 0;
-  const p95Latency =
-    latencies.length > 0
-      ? latencies[Math.floor(latencies.length * 0.95)].toFixed(2)
-      : 0;
 
-  console.log("\n\n=========================================================");
-  console.log("LOAD TEST RESULTS SUMMARY");
-  console.log("=========================================================");
-  console.log(`Total Time          : ${totalDurationSec.toFixed(2)} seconds`);
-  console.log(`Total Requests      : ${totalRequests}`);
-  console.log(`Successful (200 OK) : ${successCount}`);
-  console.log(`Failed / Timeouts   : ${errorCount}`);
-  console.log(`Throughput (RPS)    : ${rps} requests/sec`);
-  console.log("---------------------------------------------------------");
-  console.log(`Min Latency         : ${minLatency} ms`);
-  console.log(`Avg Latency         : ${avgLatency} ms`);
-  console.log(`95th Percentile     : ${p95Latency} ms`);
-  console.log(`Max Latency         : ${maxLatency} ms`);
-  if (peakHeapMB) {
-    console.log(`Mobile Heap RAM     : ${peakHeapMB} MB`);
+  const avgLatency = latencies.length
+    ? latencies.reduce((sum, val) => sum + val, 0) / latencies.length
+    : 0;
+  const minLatency = latencies.length ? latencies[0] : 0;
+  const maxLatency = latencies.length ? latencies[latencies.length - 1] : 0;
+  const p95Latency = latencies.length ? latencies[Math.floor(latencies.length * 0.95)] : 0;
+  const totalMB = totalBytesDownloaded / (1024 * 1024);
+  const throughputMBps = totalMB / totalTimeSeconds;
+
+  let finalRam = "N/A";
+  try {
+    const finalHealth = await (await fetch(`${targetUrl}/api/health`)).json();
+    finalRam = `${finalHealth.memoryUsageMB} MB`;
+  } catch {
+    // ignore
   }
-  console.log("=========================================================");
+
+  console.log("\n\n=================================================================");
+  console.log("MULTI-MEDIA LOAD TEST RESULTS SUMMARY");
+  console.log("=================================================================");
+  console.log(`Total Time          : ${totalTimeSeconds.toFixed(2)} seconds`);
+  console.log(`Total Requests      : ${totalRequests}`);
+  console.log(`Successful (200/206): ${successCount}`);
+  console.log(`Failed / Timeouts   : ${errorCount}`);
+  console.log(`Throughput (RPS)    : ${(totalRequests / totalTimeSeconds).toFixed(2)} requests/sec`);
+  console.log(`Total Data Streamed : ${totalMB.toFixed(2)} MB`);
+  console.log(`Bandwidth Speed     : ${throughputMBps.toFixed(2)} MB/sec`);
+  console.log("-----------------------------------------------------------------");
+  console.log("Workload Breakdown:");
+  for (const [name, stats] of Object.entries(perScenarioCounts)) {
+    console.log(
+      `  - ${name.padEnd(22)}: ${String(stats.count).padStart(5)} reqs | ${(stats.bytes / (1024 * 1024)).toFixed(2)} MB`
+    );
+  }
+  console.log("-----------------------------------------------------------------");
+  console.log(`Min Latency         : ${minLatency.toFixed(2)} ms`);
+  console.log(`Avg Latency         : ${avgLatency.toFixed(2)} ms`);
+  console.log(`95th Percentile     : ${p95Latency.toFixed(2)} ms`);
+  console.log(`Max Latency         : ${maxLatency.toFixed(2)} ms`);
+  console.log(`Mobile Heap RAM     : ${finalRam}`);
+  console.log("=================================================================");
 }
 
 runLoadTest();
