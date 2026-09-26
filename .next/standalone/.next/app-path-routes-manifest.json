@@ -1,14 +1,14 @@
 {
   "/api/auth/me/route": "/api/auth/me",
   "/_not-found/page": "/_not-found",
-  "/api/auth/logout/route": "/api/auth/logout",
   "/api/auth/login/route": "/api/auth/login",
   "/api/data/route": "/api/data",
-  "/api/media/images/route": "/api/media/images",
   "/api/feed/text/route": "/api/feed/text",
-  "/api/health/route": "/api/health",
-  "/api/scenario/dashboard-init/route": "/api/scenario/dashboard-init",
+  "/api/auth/logout/route": "/api/auth/logout",
   "/api/media/videos/route": "/api/media/videos",
+  "/api/health/route": "/api/health",
+  "/api/media/images/route": "/api/media/images",
+  "/api/scenario/dashboard-init/route": "/api/scenario/dashboard-init",
   "/api/external/route": "/api/external",
   "/page": "/"
 }
