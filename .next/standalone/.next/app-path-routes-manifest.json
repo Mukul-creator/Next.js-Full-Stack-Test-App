@@ -1,9 +1,13 @@
 {
+  "/_not-found/page": "/_not-found",
   "/api/auth/login/route": "/api/auth/login",
   "/api/auth/me/route": "/api/auth/me",
-  "/_not-found/page": "/_not-found",
+  "/api/feed/text/route": "/api/feed/text",
   "/api/data/route": "/api/data",
+  "/api/media/images/route": "/api/media/images",
+  "/api/media/videos/route": "/api/media/videos",
   "/api/auth/logout/route": "/api/auth/logout",
+  "/api/scenario/dashboard-init/route": "/api/scenario/dashboard-init",
   "/api/external/route": "/api/external",
   "/api/health/route": "/api/health",
   "/page": "/"
