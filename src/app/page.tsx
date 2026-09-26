@@ -68,16 +68,6 @@ interface VideoMeta {
   description?: string;
 }
 
-interface WaterfallStep {
-  name: string;
-  endpoint: string;
-  type: "JSON" | "TEXT" | "IMAGE" | "VIDEO" | "AUTH";
-  status: number;
-  latencyMs: number;
-  sizeKB: number;
-  ok: boolean;
-}
-
 interface ApiLog {
   id: string;
   method: string;
@@ -101,10 +91,6 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
 
-  const [waterfallSteps, setWaterfallSteps] = useState<WaterfallStep[]>([]);
-  const [waterfallRunning, setWaterfallRunning] = useState(false);
-  const [waterfallTotalMs, setWaterfallTotalMs] = useState<number | null>(null);
-
   const [articles, setArticles] = useState<ArticleItem[]>([]);
   const [selectedArticle, setSelectedArticle] = useState<ArticleItem | null>(null);
   const [subjectFilter, setSubjectFilter] = useState("All");
@@ -116,19 +102,9 @@ export default function Home() {
   const [images, setImages] = useState<ImageMeta[]>([]);
   const [imageMode, setImageMode] = useState<"server-svg" | "external-hd">("external-hd");
   const [imageCacheBuster, setImageCacheBuster] = useState(1);
-  const [selectedImage, setSelectedImage] = useState<ImageMeta | null>(null);
-  const [binaryProbeResult, setBinaryProbeResult] = useState<{ id: string; sizeKB: number; ms: number } | null>(null);
 
   const [videos, setVideos] = useState<VideoMeta[]>([]);
   const [activeVideo, setActiveVideo] = useState<VideoMeta | null>(null);
-  const [chunkStreamStats, setChunkStreamStats] = useState<{
-    chunksLoaded: number;
-    totalKB: number;
-    lastLatencyMs: number;
-    speedMBps: number;
-    contentRange: string;
-  }>({ chunksLoaded: 0, totalKB: 0, lastLatencyMs: 0, speedMBps: 0, contentRange: "bytes 0-0/0" });
-  const [chunkStreaming, setChunkStreaming] = useState(false);
 
   const [items, setItems] = useState<DataItem[]>([]);
   const [newTitle, setNewTitle] = useState("");
@@ -260,35 +236,11 @@ export default function Home() {
       const data = JSON.parse(text);
       const list: ImageMeta[] = Array.isArray(data.images) ? data.images : [];
       setImages(list);
-      if (list.length > 0 && !selectedImage) {
-        setSelectedImage(list[0]);
-      }
       logApiCall("GET", url, res.status, duration, sizeKB, data);
     } catch (err) {
       logApiCall("GET", url, 500, Math.round(performance.now() - start), 0, { error: String(err) });
     }
-  }, [selectedImage, logApiCall]);
-
-  const probeImageBinary = async (imgId: string) => {
-    const start = performance.now();
-    const modeParam = imageMode === "external-hd" ? "jpg" : "render";
-    const url = `/api/media/images?mode=${modeParam}&id=${imgId}&t=${Date.now()}`;
-    try {
-      const res = await fetch(url, { cache: "no-store" });
-      const blob = await res.blob();
-      const duration = Math.round(performance.now() - start);
-      const sizeKB = blob.size / 1024;
-      setBinaryProbeResult({ id: imgId, sizeKB: Number(sizeKB.toFixed(2)), ms: duration });
-      logApiCall("GET", `/api/media/images?mode=${modeParam}&id=${imgId}`, res.status, duration, sizeKB, {
-        binaryStream: blob.type || "image/jpeg",
-        imageId: imgId,
-        bytesDownloaded: blob.size,
-        latencyMs: duration,
-      });
-    } catch (err) {
-      logApiCall("GET", url, 500, Math.round(performance.now() - start), 0, { error: String(err) });
-    }
-  };
+  }, [logApiCall]);
 
   const fetchVideosCatalog = useCallback(async () => {
     const start = performance.now();
@@ -309,45 +261,6 @@ export default function Home() {
       logApiCall("GET", url, 500, Math.round(performance.now() - start), 0, { error: String(err) });
     }
   }, [activeVideo, logApiCall]);
-
-  const streamVideoChunk = async (vidId: string, chunkKB = 256) => {
-    setChunkStreaming(true);
-    const start = performance.now();
-    const byteStart = (chunkStreamStats.chunksLoaded * 65536) % (256 * 1024);
-    const byteEnd = byteStart + chunkKB * 1024 - 1;
-    const url = `/api/media/videos?mode=stream&id=${vidId}&chunkKB=${chunkKB}`;
-    try {
-      const res = await fetch(url, {
-        headers: { Range: `bytes=${byteStart}-${byteEnd}` },
-        cache: "no-store",
-      });
-      const buffer = await res.arrayBuffer();
-      const duration = Math.max(1, Math.round(performance.now() - start));
-      const downloadedKB = buffer.byteLength / 1024;
-      const speedMBps = Number(((downloadedKB / 1024) / (duration / 1000)).toFixed(2));
-      const contentRange = res.headers.get("Content-Range") || `bytes ${byteStart}-${byteEnd}/*`;
-
-      setChunkStreamStats((prev) => ({
-        chunksLoaded: prev.chunksLoaded + 1,
-        totalKB: Number((prev.totalKB + downloadedKB).toFixed(1)),
-        lastLatencyMs: duration,
-        speedMBps,
-        contentRange,
-      }));
-
-      logApiCall("GET (206)", url, res.status, duration, downloadedKB, {
-        streamType: "video/mp4 (Local Disk MP4 Byte-Range)",
-        status: res.status,
-        contentRange,
-        chunkSizeKB: Number(downloadedKB.toFixed(2)),
-        throughputMBps: speedMBps,
-      });
-    } catch (err) {
-      logApiCall("GET (206)", url, 500, Math.round(performance.now() - start), 0, { error: String(err) });
-    } finally {
-      setChunkStreaming(false);
-    }
-  };
 
   const fetchProtectedData = useCallback(
     async (tokenOverride?: string | null) => {
@@ -376,67 +289,6 @@ export default function Home() {
     },
     [getAuthHeaders, logApiCall]
   );
-
-  const runRealWorldWaterfall = async () => {
-    setWaterfallRunning(true);
-    setWaterfallSteps([]);
-    const overallStart = performance.now();
-
-    const tasks: Array<{
-      name: string;
-      endpoint: string;
-      type: WaterfallStep["type"];
-      headers?: Record<string, string>;
-    }> = [
-      { name: "1. Server Telemetry", endpoint: "/api/health", type: "JSON" },
-      { name: "2. Session Auth Check", endpoint: "/api/auth/me", type: "AUTH", headers: getAuthHeaders() },
-      { name: "3. Study Feed (Large Text)", endpoint: "/api/feed/text?subject=All&size=large", type: "TEXT" },
-      { name: "4. Local HD Image (JPEG)", endpoint: "/api/media/images?mode=jpg&id=img-1", type: "IMAGE" },
-      { name: "5. Local MP4 Video (256KB)", endpoint: "/api/media/videos?mode=stream&id=vid-1&chunkKB=256", type: "VIDEO" },
-      { name: "6. Dashboard Crypto Init", endpoint: "/api/scenario/dashboard-init", type: "JSON", headers: getAuthHeaders() },
-    ];
-
-    const results = await Promise.all(
-      tasks.map(async (t) => {
-        const tStart = performance.now();
-        try {
-          const res = await fetch(t.endpoint, {
-            headers: t.headers || {},
-            credentials: "include",
-            cache: "no-store",
-          });
-          const buf = await res.arrayBuffer();
-          const latencyMs = Math.round(performance.now() - tStart);
-          const sizeKB = Number((buf.byteLength / 1024).toFixed(2));
-          logApiCall("WATERFALL", t.endpoint, res.status, latencyMs, sizeKB);
-          return {
-            name: t.name,
-            endpoint: t.endpoint,
-            type: t.type,
-            status: res.status,
-            latencyMs,
-            sizeKB,
-            ok: res.ok || res.status === 206,
-          };
-        } catch {
-          return {
-            name: t.name,
-            endpoint: t.endpoint,
-            type: t.type,
-            status: 500,
-            latencyMs: Math.round(performance.now() - tStart),
-            sizeKB: 0,
-            ok: false,
-          };
-        }
-      })
-    );
-
-    setWaterfallSteps(results);
-    setWaterfallTotalMs(Math.round(performance.now() - overallStart));
-    setWaterfallRunning(false);
-    fetchHealth();
-  };
 
   useEffect(() => {
     const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
@@ -559,14 +411,14 @@ export default function Home() {
             <div className="flex items-center gap-2.5">
               <span className="h-3 w-3 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs font-mono uppercase tracking-widest text-emerald-400">
-                Production Multi-Media Benchmark Suite
+                Full-Stack Multi-Media Portal
               </span>
             </div>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white mt-1">
-              Next.js Real-World Media &amp; Multi-API Test Lab
+              Next.js Study &amp; Media Platform
             </h1>
             <p className="text-slate-400 text-xs md:text-sm mt-0.5">
-              Simulating concurrent Text Feeds, Binary Image Rendering, HTTP 206 Video Streaming &amp; Protected Auth APIs
+              Serving Long-Form Articles, Local High-Res JPEG &amp; Dynamic SVG Diagrams, Local MP4 Video Streams &amp; Protected APIs
             </p>
           </div>
 
@@ -591,65 +443,11 @@ export default function Home() {
                 </div>
               </div>
             )}
-
-            <button
-              onClick={runRealWorldWaterfall}
-              disabled={waterfallRunning}
-              className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white font-semibold rounded-xl text-xs md:text-sm shadow-lg transition cursor-pointer disabled:opacity-50"
-            >
-              {waterfallRunning ? "Running 6 Parallel APIs..." : "⚡ Run 6-API Waterfall Burst"}
-            </button>
           </div>
         </header>
 
-        {/* REAL-WORLD 6-API PARALLEL WATERFALL RESULTS BANNER */}
-        {waterfallSteps.length > 0 && (
-          <section className="bg-slate-900/90 border border-indigo-500/40 rounded-2xl p-5 shadow-lg space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-bold uppercase tracking-wider text-indigo-400">
-                  Parallel Multi-API Waterfall Benchmark (Text + Image + Video + Auth)
-                </h2>
-                <p className="text-xs text-slate-400">
-                  All 6 heterogeneous endpoints executed concurrently via Promise.all()
-                </p>
-              </div>
-              <div className="text-xs font-mono bg-indigo-950/70 border border-indigo-700/50 px-3 py-1.5 rounded-lg text-indigo-300">
-                Total Wall Time: <strong className="text-white">{waterfallTotalMs} ms</strong> | Total Transferred:{" "}
-                <strong className="text-emerald-400">
-                  {waterfallSteps.reduce((acc, s) => acc + s.sizeKB, 0).toFixed(1)} KB
-                </strong>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
-              {waterfallSteps.map((step) => (
-                <div
-                  key={step.name}
-                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] font-mono">
-                      <span className="px-1.5 py-0.5 rounded bg-slate-800 text-sky-300">{step.type}</span>
-                      <span className={step.ok ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
-                        HTTP {step.status}
-                      </span>
-                    </div>
-                    <p className="text-xs font-semibold text-white mt-2 truncate">{step.name}</p>
-                  </div>
-                  <div className="mt-3 pt-2 border-t border-slate-900 flex items-center justify-between text-xs font-mono">
-                    <span className="text-amber-300">{step.latencyMs} ms</span>
-                    <span className="text-slate-400">{step.sizeKB} KB</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
         {/* MAIN LAYOUT: LEFT 8 COLS (MEDIA TABS) + RIGHT 4 COLS (AUTH & LIVE API TELEMETRY) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* LEFT 8 COLUMNS: TABS FOR TEXT, IMAGES, VIDEOS, CRUD */}
           <div className="lg:col-span-8 space-y-5">
             {/* TAB BAR */}
             <div className="flex flex-wrap gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
@@ -681,7 +479,7 @@ export default function Home() {
                     : "text-slate-400 hover:text-white hover:bg-slate-800/60"
                 }`}
               >
-                🎬 Video Streaming ({videos.length})
+                🎬 Video Lectures ({videos.length})
               </button>
               <button
                 onClick={() => setActiveTab("crud")}
@@ -691,7 +489,7 @@ export default function Home() {
                     : "text-slate-400 hover:text-white hover:bg-slate-800/60"
                 }`}
               >
-                🔒 Protected CRUD ({items.length})
+                🔒 Protected Data ({items.length})
               </button>
             </div>
 
@@ -701,11 +499,10 @@ export default function Home() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-4">
                   <div>
                     <h2 className="text-lg font-bold text-white">
-                      Long-Form Technical Text &amp; Study Feed (`/api/feed/text`)
+                      Technical Study Notes &amp; Articles (`/api/feed/text`)
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Tests JSON serialization, search filtering, and large text payload compression ({feedPayloadKB}{" "}
-                      KB transferred)
+                      Multi-paragraph engineering modules ({feedPayloadKB} KB JSON payload)
                     </p>
                   </div>
 
@@ -734,19 +531,18 @@ export default function Home() {
                           fetchTextFeed(subjectFilter, searchQuery, e.target.checked);
                         }}
                       />
-                      <span>Heavy 120KB Text Mode</span>
+                      <span>Expanded 120KB Mode</span>
                     </label>
 
                     <button
                       onClick={() => fetchTextFeed(subjectFilter, searchQuery, heavyPayloadMode)}
                       className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold cursor-pointer"
                     >
-                      {feedLoading ? "Loading..." : "Reload Text API"}
+                      {feedLoading ? "Loading..." : "Refresh"}
                     </button>
                   </div>
                 </div>
 
-                {/* Search Input */}
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -759,11 +555,10 @@ export default function Home() {
                     onClick={() => fetchTextFeed(subjectFilter, searchQuery, heavyPayloadMode)}
                     className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg cursor-pointer"
                   >
-                    Search API
+                    Search
                   </button>
                 </div>
 
-                {/* Article List + Reader Split View */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                   <div className="md:col-span-5 space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
                     {articles.map((art) => (
@@ -820,7 +615,7 @@ export default function Home() {
                         </div>
                       </article>
                     ) : (
-                      <p className="text-xs text-slate-500">Select an article to inspect full text payload.</p>
+                      <p className="text-xs text-slate-500">Select an article to read.</p>
                     )}
                   </div>
                 </div>
@@ -833,11 +628,10 @@ export default function Home() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-4">
                   <div>
                     <h2 className="text-lg font-bold text-white">
-                      Dynamic Binary Image &amp; Diagram Stream (`/api/media/images`)
+                      Scientific Image &amp; Vector Diagram Gallery (`/api/media/images`)
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Streams multi-kilobyte high-resolution SVG scientific diagrams directly from your mobile server or
-                      external HD CDN
+                      Switch between Local High-Res JPEGs (`public/media/images/*.jpg`) and Dynamic Lorenz/Fourier Server SVGs
                     </p>
                   </div>
 
@@ -850,7 +644,7 @@ export default function Home() {
                           : "bg-slate-950 text-slate-400 border border-slate-800"
                       }`}
                     >
-                      Local HD JPEG Stream (156KB–1.1MB)
+                      Local HD JPEG Photos
                     </button>
                     <button
                       onClick={() => setImageMode("server-svg")}
@@ -860,27 +654,16 @@ export default function Home() {
                           : "bg-slate-950 text-slate-400 border border-slate-800"
                       }`}
                     >
-                      Dynamic Server SVG (24KB)
+                      Dynamic Server SVG
                     </button>
                     <button
                       onClick={() => setImageCacheBuster((c) => c + 1)}
                       className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold cursor-pointer"
                     >
-                      Force Re-Fetch All Images
+                      Reload Images
                     </button>
                   </div>
                 </div>
-
-                {binaryProbeResult && (
-                  <div className="bg-emerald-950/40 border border-emerald-600/40 rounded-xl p-3 flex items-center justify-between text-xs font-mono">
-                    <span className="text-emerald-300">
-                      Binary Image Probe Completed (`{binaryProbeResult.id}`):
-                    </span>
-                    <span className="text-white font-bold">
-                      {binaryProbeResult.sizeKB} KB downloaded in {binaryProbeResult.ms} ms
-                    </span>
-                  </div>
-                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {images.map((img) => {
@@ -892,7 +675,7 @@ export default function Home() {
                         : `${baseHd}&t=${imageCacheBuster}`;
                     const sizeKB =
                       imageMode === "server-svg"
-                        ? 24
+                        ? 38
                         : img.estimatedSizeKB || Math.round((img.approxServerBytes || 250000) / 1024);
                     return (
                       <div
@@ -900,16 +683,15 @@ export default function Home() {
                         className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex flex-col justify-between group"
                       >
                         <div>
-                          <div className="relative h-40 bg-slate-900 overflow-hidden">
+                          <div className="relative h-44 bg-slate-900 overflow-hidden">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={src}
                               alt={img.title}
                               className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                              loading="lazy"
                             />
                             <span className="absolute top-2 right-2 bg-slate-950/80 border border-slate-700 px-2 py-0.5 rounded text-[10px] font-mono text-sky-300">
-                              {img.resolution}
+                              {imageMode === "server-svg" ? "1200x750 SVG" : img.resolution}
                             </span>
                           </div>
                           <div className="p-3">
@@ -918,14 +700,9 @@ export default function Home() {
                           </div>
                         </div>
 
-                        <div className="px-3 pb-3 pt-2 border-t border-slate-900 flex items-center justify-between">
-                          <span className="text-[11px] font-mono text-slate-500">~{sizeKB} KB</span>
-                          <button
-                            onClick={() => probeImageBinary(img.id)}
-                            className="text-xs font-mono text-emerald-400 hover:text-emerald-300 cursor-pointer"
-                          >
-                            Benchmark Stream →
-                          </button>
+                        <div className="px-3 pb-3 pt-2 border-t border-slate-900 flex items-center justify-between text-[11px] font-mono text-slate-500">
+                          <span>{imageMode === "server-svg" ? "image/svg+xml" : "image/jpeg"}</span>
+                          <span>~{sizeKB} KB</span>
                         </div>
                       </div>
                     );
@@ -934,58 +711,16 @@ export default function Home() {
               </div>
             )}
 
-            {/* TAB 3: VIDEO STREAMING & HTTP 206 CHUNK BENCHMARK */}
+            {/* TAB 3: VIDEO STREAMING */}
             {activeTab === "videos" && (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-                  <div>
-                    <h2 className="text-lg font-bold text-white">
-                      Local MP4 Video Player &amp; HTTP 206 Partial Content Streamer (`/api/media/videos`)
-                    </h2>
-                    <p className="text-xs text-slate-400">
-                      Streams real local MP4 files (`public/media/videos/*.mp4`) from your server with HTTP 206
-                      byte-range support
-                    </p>
-                  </div>
-
-                  {activeVideo && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => streamVideoChunk(activeVideo.id, 256)}
-                        disabled={chunkStreaming}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                      >
-                        {chunkStreaming ? "Streaming..." : "Stream 256KB Video Chunk"}
-                      </button>
-                      <button
-                        onClick={() => streamVideoChunk(activeVideo.id, 512)}
-                        disabled={chunkStreaming}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-                      >
-                        Stream 512KB Chunk
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Binary Video Chunk Telemetry Strip */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs font-mono">
-                  <div>
-                    <span className="text-slate-500 block">CHUNKS STREAMED</span>
-                    <span className="text-white font-bold text-sm">{chunkStreamStats.chunksLoaded}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block">BINARY DOWNLOADED</span>
-                    <span className="text-emerald-400 font-bold text-sm">{chunkStreamStats.totalKB} KB</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block">CHUNK LATENCY</span>
-                    <span className="text-amber-300 font-bold text-sm">{chunkStreamStats.lastLatencyMs} ms</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block">STREAM SPEED</span>
-                    <span className="text-sky-400 font-bold text-sm">{chunkStreamStats.speedMBps} MB/s</span>
-                  </div>
+                <div className="border-b border-slate-800 pb-4">
+                  <h2 className="text-lg font-bold text-white">
+                    Local MP4 Video Lectures (`/api/media/videos`)
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Streamed from `public/media/videos/*.mp4` with HTTP 206 Partial Content byte-range support
+                  </p>
                 </div>
 
                 {activeVideo && (
@@ -1011,9 +746,6 @@ export default function Home() {
                         <h3 className="text-base font-bold text-white">{activeVideo.title}</h3>
                         <p className="text-xs text-slate-400">
                           {activeVideo.description || `Instructor: ${activeVideo.instructor}`}
-                        </p>
-                        <p className="text-[11px] font-mono text-slate-500 pt-1">
-                          Content-Range Header: {chunkStreamStats.contentRange}
                         </p>
                       </div>
                     </div>
@@ -1051,7 +783,7 @@ export default function Home() {
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                   <div>
-                    <h2 className="text-lg font-bold text-white">Protected Database CRUD (`/api/data`)</h2>
+                    <h2 className="text-lg font-bold text-white">Protected Database Records (`/api/data`)</h2>
                     <p className="text-xs text-slate-400">
                       Requires valid Session Cookie or Bearer Token in Authorization header
                     </p>
@@ -1075,7 +807,7 @@ export default function Home() {
                         type="text"
                         value={newTitle}
                         onChange={(e) => setNewTitle(e.target.value)}
-                        placeholder="Add new benchmark task..."
+                        placeholder="Add new record..."
                         className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white"
                       />
                       <select
@@ -1122,9 +854,8 @@ export default function Home() {
             )}
           </div>
 
-          {/* RIGHT 4 COLUMNS: AUTH PANEL & LIVE NETWORK / PAYLOAD INSPECTOR */}
+          {/* RIGHT 4 COLUMNS: AUTH PANEL & API LOGS */}
           <div className="lg:col-span-4 space-y-5">
-            {/* AUTHENTICATION PANEL */}
             <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-indigo-400">
@@ -1185,11 +916,10 @@ export default function Home() {
               {authMessage && <p className="text-xs text-slate-400 font-mono">{authMessage}</p>}
             </section>
 
-            {/* LIVE NETWORK TRAFFIC & PAYLOAD SIZE LOG */}
             <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-sky-400">
-                  2. Live API &amp; Media Traffic
+                  2. API Activity Log
                 </h2>
                 <button
                   onClick={() => setLogs([])}
